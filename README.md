@@ -277,12 +277,7 @@ If you encounter issues, check the console output for detailed error messages an
 - Unsplash for placeholder images
 - The open-source community for inspiration
 
-## 📞 Support
 
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/anshkarwasra/WebBuilderCLITool/issues) page
-2. Create a new issue with detailed information
 
 ## 🔮 Roadmap
 
