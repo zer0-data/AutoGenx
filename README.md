@@ -1,6 +1,6 @@
-## autogen (Flask Web App)
+## Autogen (Flask Web App)
 
-autogen provides a simple web UI to generate and optionally deploy a website from a prompt, a sketch, an uploaded image, or a Figma wireframe.
+Autogen provides a simple web UI to generate and optionally deploy a website from a prompt, a sketch, an uploaded image, or a Figma wireframe.
 
 ### Setup
 
@@ -54,22 +54,7 @@ Open http://localhost:5000 in your browser.
 - “Open Local” previews the generated project files served from your local output folder.
 - If you deployed to GitHub Pages, “Open Live” previews the live site.
 
-# 🚀 AI Web Generator
 
-An intelligent web development agent that transforms your ideas into fully functional websites. Simply describe what you want or upload an image, and watch as it generates HTML, CSS, and JavaScript code, then automatically deploys it to GitHub Pages.
-
-## 🎥 Demo Video
-[Watch the demo](https://drive.google.com/file/d/1s0AVLIJOpeT3q489oovBdxvxozps8J6j/view?usp=sharing) to see the AI Web Generator in action!
-
-## ✨ Features
-
-- 🤖 **AI-Powered Generation**: Uses Google Gemini AI to understand your requirements
-- 📱 **Multi-Input Support**: Accept text prompts or image uploads
-- 🎨 **Complete Web Stack**: Generates HTML, CSS, and JavaScript
-- 🔄 **Auto Deployment**: Automatically creates GitHub repository and deploys to GitHub Pages
-- 🖼️ **Image Recognition**: Replicates designs from uploaded images
-- 📐 **Responsive Design**: Creates mobile-friendly websites
-- ⚡ **Local Development**: Generates files in your local machine first
 
 ## 🛠️ Prerequisites
 
@@ -278,16 +263,5 @@ If you encounter issues, check the console output for detailed error messages an
 - The open-source community for inspiration
 
 
-
-## 🔮 Roadmap
-
-- [ ] Support for React/Vue.js generation
-- [ ] Database integration capabilities
-- [ ] Custom domain configuration
-- [ ] Team collaboration features
-- [ ] Template marketplace
-- [ ] Advanced SEO optimization
-
----
 
 
