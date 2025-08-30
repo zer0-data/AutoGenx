@@ -1,11 +1,11 @@
-import os
-import io
-import zipfile
+# app.py
+import os, io, zipfile, base64
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+
 import requests
-from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify, flash, send_from_directory, abort
-import base64
+from flask import Flask, request, jsonify, send_file, send_from_directory, abort
+import inspect
 
 from backend import create_and_deploy_project
 
@@ -14,20 +14,25 @@ def create_app():
     app = Flask(__name__)
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 
-    @app.route("/", methods=["GET"]) 
-    def index():
-        return render_template("index.html")
+    # ----------------------
+    # Helpers
+    # ----------------------
+    def _safe_join(base: str, rel: str) -> str:
+        base_real = os.path.realpath(base)
+        target = os.path.realpath(os.path.join(base_real, rel))
+        if target == base_real or target.startswith(base_real + os.sep):
+            return target
+        raise PermissionError("Path traversal detected")
 
     def _extract_figma_key_and_node(figma_url: str):
         try:
             u = urlparse(figma_url)
-            parts = [p for p in u.path.split('/') if p]
+            parts = [p for p in u.path.split("/") if p]
             key = None
             if len(parts) >= 2 and parts[0] in ("file", "design"):
                 key = parts[1]
-            # node-id may exist in query
             q = parse_qs(u.query)
-            node = q.get('node-id', [None])[0]
+            node = q.get("node-id", [None])[0]
             return key, node
         except Exception:
             return None, None
@@ -38,16 +43,14 @@ def create_app():
             return None
 
         headers = {"X-FIGMA-TOKEN": token}
-        # If node missing, fetch first page id
         if not node:
             meta = requests.get(f"https://api.figma.com/v1/files/{key}", headers=headers, timeout=30)
             meta.raise_for_status()
             data = meta.json()
-            # document.children is list of pages
-            node = data.get('document', {}).get('children', [{}])[0].get('id')
+            node = data.get("document", {}).get("children", [{}])[0].get("id")
             if not node:
                 return None
-        # Get image URL for the node
+
         imgs = requests.get(
             f"https://api.figma.com/v1/images/{key}",
             headers=headers,
@@ -55,92 +58,140 @@ def create_app():
             timeout=30,
         )
         imgs.raise_for_status()
-        img_url = imgs.json().get('images', {}).get(node)
+        img_url = imgs.json().get("images", {}).get(node)
         if not img_url:
             return None
-        # Download image
+
         img_resp = requests.get(img_url, timeout=60)
         img_resp.raise_for_status()
         uploads_dir.mkdir(parents=True, exist_ok=True)
         out_path = uploads_dir / f"figma_{key}_{node.replace(':','-')}.png"
-        with open(out_path, 'wb') as f:
-            f.write(img_resp.content)
+        out_path.write_bytes(img_resp.content)
         return str(out_path)
 
-    @app.route("/generate", methods=["POST"]) 
+    def _save_canvas_png(data_url: str, dest_dir: Path) -> str | None:
+        if not data_url or not data_url.startswith("data:image/"):
+            return None
+        try:
+            _, b64 = data_url.split(",", 1)
+            raw = base64.b64decode(b64)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            out = dest_dir / "canvas_wireframe.png"
+            out.write_bytes(raw)
+            return str(out)
+        except Exception:
+            return None
+
+    def _save_uploaded_file(file_storage, dest_dir: Path) -> str | None:
+        if not file_storage or not getattr(file_storage, "filename", ""):
+            return None
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        out = dest_dir / file_storage.filename
+        file_storage.save(out)
+        return str(out)
+
+    def _call_backend_with_supported_kwargs(**kwargs):
+        """
+        Call create_and_deploy_project but only pass kwargs it actually supports.
+        This avoids 'unexpected keyword argument' errors across different versions.
+        """
+        sig = inspect.signature(create_and_deploy_project)
+        allowed = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        return create_and_deploy_project(**allowed)
+
+    # ----------------------
+    # API
+    # ----------------------
+    @app.get("/api/health")
+    def health():
+        return jsonify({"status": "ok"})
+
+    @app.post("/api/generate")
     def generate():
-        prompt = request.form.get("prompt", "").strip()
-        project_name = request.form.get("project_name", "").strip() or None
+        uploads = Path("uploads")
 
-        # Optional image upload
-        img_path = None
-        file = request.files.get("image")
-        if file and file.filename:
-            uploads_dir = Path("uploads")
-            uploads_dir.mkdir(parents=True, exist_ok=True)
-            img_path = str(uploads_dir / file.filename)
-            file.save(img_path)
+        # Accept JSON or multipart form
+        data_json = request.get_json(silent=True)
+        if data_json:
+            description = (data_json.get("description") or data_json.get("prompt") or "").strip()
+            project_name = (data_json.get("project_name") or "").strip() or None
+            auto_deploy = bool(data_json.get("auto_deploy", False))
+            username = (data_json.get("github_username") or "").strip() or None
+            repo_name = (data_json.get("repo_name") or "").strip() or None
+            token = (data_json.get("github_token") or os.getenv("GITHUB_TOKEN") or "").strip() or None
+            figma_url = (data_json.get("figma_url") or "").strip()
+            figma_token = (data_json.get("figma_token") or os.getenv("FIGMA_TOKEN") or "").strip()
+            img_path = None
+        else:
+            form = request.form
+            files = request.files
+            description = (form.get("prompt") or form.get("description") or "").strip()
+            project_name = (form.get("project_name") or "").strip() or None
+            auto_deploy = (form.get("auto_deploy") or "").lower() in ("on", "true", "1", "yes")
+            username = (form.get("github_username") or "").strip() or None
+            repo_name = (form.get("repo_name") or "").strip() or None
+            token = (form.get("github_token") or os.getenv("GITHUB_TOKEN") or "").strip() or None
+            figma_url = (form.get("figma_url") or "").strip()
+            figma_token = (form.get("figma_token") or os.getenv("FIGMA_TOKEN") or "").strip()
+            img_path = _save_uploaded_file(files.get("image"), uploads)
+            canvas_data_url = form.get("canvas_data")
+            if canvas_data_url and not img_path:
+                img_path = _save_canvas_png(canvas_data_url, uploads)
 
-        # Optional Canvas drawing (data URL)
-        canvas_data = request.form.get("canvas_data", "")
-        if canvas_data.startswith("data:image/"):
+        if not description:
+            return jsonify({"success": False, "error": "Description is required"}), 400
+
+        # If Figma info is present, render a PNG and use as `img_path` (local hint)
+        if figma_url and figma_token and not img_path:
             try:
-                header, b64 = canvas_data.split(",", 1)
-                raw = base64.b64decode(b64)
-                uploads_dir = Path("uploads")
-                uploads_dir.mkdir(parents=True, exist_ok=True)
-                img_path = str(uploads_dir / "canvas_wireframe.png")
-                with open(img_path, 'wb') as f:
-                    f.write(raw)
-            except Exception as e:
-                flash(f"Canvas image parse failed: {e}", "error")
+                img_found = _download_figma_image(figma_url, figma_token, uploads)
+                if img_found:
+                    img_path = img_found
+            except Exception:
+                pass  # non-fatal
 
-        # Optional Figma URL -> render first page to PNG
-        figma_url = request.form.get("figma_url", "").strip()
-        figma_token = request.form.get("figma_token") or os.getenv("FIGMA_TOKEN")
-        if figma_url:
-            try:
-                img_from_figma = _download_figma_image(figma_url, figma_token, Path("uploads"))
-                if img_from_figma:
-                    img_path = img_from_figma
-                else:
-                    flash("Unable to render Figma file. Check URL and token.", "error")
-            except Exception as e:
-                flash(f"Figma fetch failed: {e}", "error")
+        # Call backend with only supported kwargs
+        try:
+            result = _call_backend_with_supported_kwargs(
+                prompt=description,
+                project_name=project_name,
+                github_token=(token if auto_deploy else None),
+                username=(username if auto_deploy else None),
+                repo_name=(repo_name if auto_deploy else None),
+                auto_deploy=auto_deploy,
+                img=img_path,
+                # figma_url / figma_token intentionally NOT passed unless backend supports them
+            )
+        except Exception as e:
+            app.logger.exception("create_and_deploy_project failed: %s", e)
+            return jsonify({"success": False, "error": str(e)}), 500
 
-        auto_deploy = request.form.get("auto_deploy") == "on"
-        username = request.form.get("github_username") or None
-        repo_name = request.form.get("repo_name") or None
-        token = request.form.get("github_token") or os.getenv("GITHUB_TOKEN")
+        if not result or not result.get("success"):
+            return jsonify({"success": False, "error": "Generation failed"}), 500
 
-        if not prompt:
-            flash("Prompt is required", "error")
-            return redirect(url_for("index"))
+        project_path = result.get("project_path")
+        if not project_path or not os.path.isdir(project_path):
+            return jsonify({"success": False, "error": "Project path missing"}), 500
 
-        result = create_and_deploy_project(
-            prompt=prompt,
-            project_name=project_name,
-            github_token=token if auto_deploy else None,
-            username=username if auto_deploy else None,
-            repo_name=repo_name if auto_deploy else None,
-            auto_deploy=auto_deploy,
-            img=img_path,
-        )
+        b64base = base64.urlsafe_b64encode(project_path.encode()).decode()
+        preview_url = f"/api/preview/{b64base}/index.html"
+        download_url = f"/api/download?path={project_path}"
 
-        if not result.get("success"):
-            flash(result.get("error", "Generation failed"), "error")
-            return redirect(url_for("index"))
+        return jsonify({
+            "success": True,
+            "project_path": project_path,
+            "github_url": result.get("github_url"),
+            "pages_url": result.get("pages_url"),
+            "preview_url": preview_url,
+            "download_url": download_url,
+        })
 
-        return render_template("result.html", result=result)
-
-    @app.route("/download", methods=["GET"]) 
+    @app.get("/api/download")
     def download():
         project_path = request.args.get("path")
         if not project_path or not os.path.isdir(project_path):
-            flash("Invalid project path", "error")
-            return redirect(url_for("index"))
+            return jsonify({"error": "Invalid project path"}), 400
 
-        # Create in-memory zip
         mem = io.BytesIO()
         with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
             for root, _, files in os.walk(project_path):
@@ -152,15 +203,26 @@ def create_app():
         proj = Path(project_path).name
         return send_file(mem, as_attachment=True, download_name=f"{proj}.zip")
 
-    def _safe_join(base: str, rel: str) -> str:
-        base_real = os.path.realpath(base)
-        target = os.path.realpath(os.path.join(base_real, rel))
-        if target == base_real or target.startswith(base_real + os.sep):
-            return target
-        raise PermissionError("Path traversal detected")
+    @app.get("/api/files")
+    def list_files():
+        """
+        Returns { files: { "index.html": "<content>", ... } } so the UI can show code.
+        """
+        project_path = request.args.get("path")
+        if not project_path or not os.path.isdir(project_path):
+            return jsonify({"error": "Invalid project path"}), 400
 
-    @app.route("/preview/<b64base>/", defaults={"relpath": ""})
-    @app.route("/preview/<b64base>/<path:relpath>")
+        out = {}
+        for p in Path(project_path).glob("*"):
+            if p.is_file() and p.suffix in (".html", ".css", ".js", ".json"):
+                try:
+                    out[p.name] = p.read_text(encoding="utf-8")
+                except Exception:
+                    out[p.name] = "// (binary or unreadable)"
+        return jsonify({"files": out})
+
+    @app.get("/api/preview/<b64base>/", defaults={"relpath": ""})
+    @app.get("/api/preview/<b64base>/<path:relpath>")
     def preview_file(b64base: str, relpath: str):
         try:
             base = base64.urlsafe_b64decode(b64base.encode()).decode()
@@ -173,7 +235,6 @@ def create_app():
             full = _safe_join(base, rel)
         except PermissionError:
             abort(403)
-        # If directory, try index.html
         if os.path.isdir(full):
             rel = os.path.join(rel, "index.html") if rel else "index.html"
         return send_from_directory(base, rel, conditional=True)
@@ -184,4 +245,4 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=debug, use_reloader=False)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5500)), debug=debug, use_reloader=False)

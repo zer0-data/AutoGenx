@@ -1,8 +1,23 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import "./App.css"; // keep your CSS
 
 function App() {
+  const [prompt, setPrompt] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [username, setUsername] = useState("");
+  const [repoName, setRepoName] = useState("");
+  const [token, setToken] = useState("");
+  const [autoDeploy, setAutoDeploy] = useState(false);
+  const [figmaUrl, setFigmaUrl] = useState("");
+  const [figmaToken, setFigmaToken] = useState("");
+  const [image, setImage] = useState(null);
+  const [canvasData, setCanvasData] = useState("");
+
+  const navigate = useNavigate();
+
+  // ✅ Canvas drawing logic
   useEffect(() => {
-    // Canvas drawing logic
     const canvas = document.getElementById("wireCanvas");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -10,10 +25,10 @@ function App() {
     let lastX = 0,
       lastY = 0;
     let isDirty = false;
+
     const colorEl = document.getElementById("penColor");
     const sizeEl = document.getElementById("penSize");
     const clearBtn = document.getElementById("clearCanvas");
-    const hidden = document.getElementById("canvas_data");
 
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -65,9 +80,62 @@ function App() {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       isDirty = false;
-      hidden.value = "";
+      setCanvasData("");
     });
+
+    // capture image on submit
+    const form = document.getElementById("genForm");
+    if (form) {
+      form.addEventListener("submit", () => {
+        if (isDirty) {
+          setCanvasData(canvas.toDataURL("image/png"));
+        }
+      });
+    }
+
+    return () => {
+      canvas.removeEventListener("mousedown", start);
+      canvas.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", end);
+      canvas.removeEventListener("touchstart", start);
+      canvas.removeEventListener("touchmove", move);
+      canvas.removeEventListener("touchend", end);
+    };
   }, []);
+
+  // ✅ Handle form submit
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData();
+    formData.append("prompt", prompt);
+    formData.append("project_name", projectName);
+    formData.append("auto_deploy", autoDeploy ? "on" : "");
+    formData.append("github_username", username);
+    formData.append("repo_name", repoName);
+    formData.append("github_token", token);
+    formData.append("figma_url", figmaUrl);
+    formData.append("figma_token", figmaToken);
+    if (image) formData.append("image", image);
+    if (canvasData) formData.append("canvas_data", canvasData);
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        navigate("/result", { state: data });
+      } else {
+        alert(data.error || "Generation failed");
+      }
+    } catch (err) {
+      console.error("Request failed:", err);
+      alert("Server error");
+    }
+  };
 
   return (
     <div className="wrap">
@@ -79,35 +147,51 @@ function App() {
         </p>
       </header>
 
-      <form>
+      <form id="genForm" onSubmit={handleSubmit}>
         <div className="form-grid">
+          {/* Prompt */}
           <div className="card prompt-section">
             <label htmlFor="prompt">Project Description</label>
             <textarea
               id="prompt"
               name="prompt"
-              placeholder="Describe the website..."
-            ></textarea>
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe the website you want to create..."
+            />
             <div className="hint">
-              Be as specific as possible - mention colors, layout, features, and
-              functionality you want.
+              Be as specific as possible – mention colors, layout, features, and
+              functionality.
             </div>
           </div>
 
+          {/* Project Name */}
           <div className="card">
             <label htmlFor="project_name">Project Name</label>
             <input
               type="text"
               id="project_name"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
               placeholder="Leave empty for auto-generation"
             />
           </div>
 
+          {/* Image Upload */}
           <div className="card">
             <label htmlFor="image">Reference Image</label>
-            <input type="file" id="image" accept="image/*" />
+            <input
+              type="file"
+              id="image"
+              accept="image/*"
+              onChange={(e) => setImage(e.target.files[0])}
+            />
+            <div className="hint">
+              Upload a design mockup, screenshot, or inspiration image.
+            </div>
           </div>
 
+          {/* Canvas */}
           <div className="card canvas-section">
             <label>Quick Wireframe Sketch</label>
             <div className="canvas-controls">
@@ -124,18 +208,63 @@ function App() {
               </button>
             </div>
             <canvas id="wireCanvas" width="900" height="560"></canvas>
-            <input type="hidden" id="canvas_data" />
+            <input type="hidden" id="canvas_data" value={canvasData} />
+            <div className="hint">
+              Draw a rough layout or wireframe to guide the design.
+            </div>
           </div>
 
+          {/* Figma */}
+          <div className="card">
+            <label htmlFor="figma_url">Figma Design File</label>
+            <input
+              type="text"
+              id="figma_url"
+              value={figmaUrl}
+              onChange={(e) => setFigmaUrl(e.target.value)}
+              placeholder="https://www.figma.com/file/[key]/..."
+            />
+            <input
+              type="password"
+              value={figmaToken}
+              onChange={(e) => setFigmaToken(e.target.value)}
+              placeholder="Figma token"
+              style={{ marginTop: "12px" }}
+            />
+          </div>
+
+          {/* Deploy */}
           <div className="card deploy-section">
             <label className="checkbox-label">
-              <input type="checkbox" /> Auto-deploy to GitHub Pages
+              <input
+                type="checkbox"
+                checked={autoDeploy}
+                onChange={(e) => setAutoDeploy(e.target.checked)}
+              />
+              Auto-deploy to GitHub Pages
             </label>
-            <div className="deploy-inputs">
-              <input type="text" placeholder="GitHub username" />
-              <input type="text" placeholder="Repository name" />
-              <input type="password" placeholder="GitHub token" />
-            </div>
+            {autoDeploy && (
+              <div className="deploy-inputs">
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="GitHub username"
+                />
+                <input
+                  type="text"
+                  value={repoName}
+                  onChange={(e) => setRepoName(e.target.value)}
+                  placeholder="Repository name"
+                />
+                <input
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="GitHub token"
+                />
+              </div>
+            )}
           </div>
         </div>
 
