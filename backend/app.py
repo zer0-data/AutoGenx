@@ -210,6 +210,27 @@ def create_app():
             rel = os.path.join(rel, "index.html") if rel else "index.html"
         return send_from_directory(base, rel, conditional=True)
 
+    @app.route("/api/files", methods=["GET"])
+    def api_files():
+        path = request.args.get('path', '')
+        if not path:
+            return jsonify({"error": "No path provided"}), 400
+        
+        # Convert projects/site-xxx to actual file path
+        full_path = Path(path)
+        if not full_path.exists():
+            return jsonify({"error": f"Project path '{path}' not found"}), 404
+        
+        files = {}
+        try:
+            for file_path in full_path.iterdir():
+                if file_path.is_file():
+                    files[file_path.name] = file_path.read_text(encoding='utf-8')
+        except Exception as e:
+            return jsonify({"error": f"Error reading files: {str(e)}"}), 500
+        
+        return jsonify(files)
+
     return app
 
 app = create_app()
