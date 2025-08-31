@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "homepage": "https://zer0-data.github.io/AutoGenx/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
