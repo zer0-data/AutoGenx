@@ -180,9 +180,18 @@ def create_and_deploy_project(
             # Do not fail the generation if deploy fails
             print(f"[deploy] error: {e}")
 
+    # Generate preview and download URLs for the frontend
+    import base64
+    b64_path = base64.urlsafe_b64encode(project_path.encode()).decode()
+    base_url = "https://autogenx.onrender.com"  # Your Render backend URL
+    preview_url = f"{base_url}/preview/{b64_path}/"
+    download_url = f"{base_url}/download?path={project_path}"
+
     return {
         "success": True,
         "project_path": project_path,
+        "preview_url": preview_url,
+        "download_url": download_url,
         "github_url": github_url,
         "pages_url": pages_url,
         "generated_at": datetime.utcnow().isoformat() + "Z",
