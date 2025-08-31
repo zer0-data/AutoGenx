@@ -204,7 +204,7 @@ def _scaffold_from_prompt(prompt: str) -> dict[str, str]:
     if not fields and wants_form:
         fields = [("name", "text", "Your name")]
     red_theme = "red" in prompt.lower()
-      css = f"""
+    css = f"""
       :root {{
         --primary: {"#c81d25" if red_theme else "#119da4"};
         --bg: #ffffff;
