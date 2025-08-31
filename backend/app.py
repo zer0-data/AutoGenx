@@ -115,6 +115,57 @@ def create_app():
             return redirect(url_for("index"))
         return render_template("result.html", result=result)
 
+    @app.route("/api/generate", methods=["POST"])
+    def generate_api():
+        prompt = request.form.get("prompt", "").strip()
+        project_name = request.form.get("project_name", "").strip() or None
+        img_path = None
+        file = request.files.get("image")
+        if file and file.filename:
+            uploads_dir = Path("uploads")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            img_path = str(uploads_dir / file.filename)
+            file.save(img_path)
+        canvas_data = request.form.get("canvas_data", "")
+        if canvas_data.startswith("data:image/"):
+            try:
+                header, b64 = canvas_data.split(",", 1)
+                raw = base64.b64decode(b64)
+                uploads_dir = Path("uploads")
+                uploads_dir.mkdir(parents=True, exist_ok=True)
+                img_path = str(uploads_dir / "canvas_wireframe.png")
+                with open(img_path, 'wb') as f:
+                    f.write(raw)
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Canvas image parse failed: {e}"}), 400
+        figma_url = request.form.get("figma_url", "").strip()
+        figma_token = request.form.get("figma_token") or os.getenv("FIGMA_TOKEN")
+        if figma_url:
+            try:
+                img_from_figma = _download_figma_image(figma_url, figma_token, Path("uploads"))
+                if img_from_figma:
+                    img_path = img_from_figma
+                else:
+                    return jsonify({"success": False, "error": "Unable to render Figma file. Check URL and token."}), 400
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Figma fetch failed: {e}"}), 400
+        auto_deploy = request.form.get("auto_deploy") == "on"
+        username = request.form.get("github_username") or None
+        repo_name = request.form.get("repo_name") or None
+        token = request.form.get("github_token") or os.getenv("GITHUB_TOKEN")
+        if not prompt:
+            return jsonify({"success": False, "error": "Prompt is required"}), 400
+        result = create_and_deploy_project(
+            prompt=prompt,
+            project_name=project_name,
+            github_token=token if auto_deploy else None,
+            username=username if auto_deploy else None,
+            repo_name=repo_name if auto_deploy else None,
+            auto_deploy=auto_deploy,
+            img=img_path,
+        )
+        return jsonify(result)
+
     @app.route("/download", methods=["GET"])
     def download():
         project_path = request.args.get("path")
