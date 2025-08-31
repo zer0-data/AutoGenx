@@ -106,6 +106,12 @@ function App() {
   // ✅ Handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log("Form submitted, prompt:", prompt);
+
+    if (!prompt.trim()) {
+      alert("Please enter a project description");
+      return;
+    }
 
     const formData = new FormData();
     formData.append("prompt", prompt);
@@ -119,6 +125,8 @@ function App() {
     if (image) formData.append("image", image);
     if (canvasData) formData.append("canvas_data", canvasData);
 
+    console.log("FormData prepared, making API call...");
+
     try {
       const apiBase = "https://autogenx.onrender.com";
       const res = await fetch(`${apiBase}/api/generate`, {
@@ -126,10 +134,15 @@ function App() {
         body: formData,
       });
 
+      console.log("API response received:", res.status);
       const data = await res.json();
+      console.log("API response data:", data);
+      
       if (data.success) {
+        console.log("Success! Navigating to result page...");
         navigate("/result", { state: data });
       } else {
+        console.error("API returned error:", data.error);
         alert(data.error || "Generation failed");
       }
     } catch (err) {
