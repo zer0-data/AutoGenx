@@ -13,12 +13,8 @@ from backend import create_and_deploy_project
 def create_app():
     app = Flask(__name__)
     
-    # Configure CORS with explicit settings for GitHub Pages
-    CORS(app, origins=[
-        "https://zer0-data.github.io",
-        "http://localhost:*",
-        "http://127.0.0.1:*"
-    ])
+    # Configure CORS to allow all origins
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
     
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 
