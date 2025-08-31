@@ -127,13 +127,18 @@ def _scaffold_from_prompt(prompt: str) -> dict[str, str]:
 
 
 def _write_project(files: dict[str, str]) -> str:
+  try:
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     pid = uuid.uuid4().hex[:8]
     project_dir = PROJECTS_DIR / f"site-{pid}"
     project_dir.mkdir(parents=True, exist_ok=True)
     for name, content in files.items():
-        (project_dir / name).write_text(content, encoding="utf-8")
+      (project_dir / name).write_text(content, encoding="utf-8")
+    print(f"[backend] Project created: {project_dir}")
     return str(project_dir)
+  except Exception as e:
+    print(f"[backend] Error creating project: {e}")
+    return ""
 
 
 def create_and_deploy_project(
@@ -151,40 +156,52 @@ def create_and_deploy_project(
     Always generate a local project. If GitHub creds are provided and auto_deploy=True,
     attempt to create/update repo and enable Pages (no-op if helper missing).
     """
-    files = _scaffold_from_prompt(prompt or "Generated Site")
-    project_path = _write_project(files)
+  files = _scaffold_from_prompt(prompt or "Generated Site")
+  project_path = _write_project(files)
 
-    github_url = None
-    pages_url = None
+  github_url = None
+  pages_url = None
 
-    if auto_deploy and github_token and username and repo_name:
-        try:
-            if create_or_update_repo and enable_pages_and_push:
-                # These helpers are expected to handle: repo create/clean, push files, enable Pages
-                github_url = create_or_update_repo(
-                    username=username,
-                    repo_name=repo_name,
-                    token=github_token,
-                    local_path=project_path,
-                )
-                pages_url = enable_pages_and_push(
-                    username=username,
-                    repo_name=repo_name,
-                    token=github_token,
-                    local_path=project_path,
-                )
-            else:
-                # Graceful no-op if GH helper not available
-                pass
-        except Exception as e:
-            # Do not fail the generation if deploy fails
-            print(f"[deploy] error: {e}")
-
+  if not project_path or not os.path.isdir(project_path):
+    print(f"[backend] Project creation failed: {project_path}")
     return {
-        "success": True,
-        "project_path": project_path,
-        "github_url": github_url,
-        "pages_url": pages_url,
-        "generated_at": datetime.utcnow().isoformat() + "Z",
-        "files_written": ["index.html", "styles.css", "script.js"],
+      "success": False,
+      "error": "Project folder could not be created.",
+      "project_path": project_path,
+      "github_url": None,
+      "pages_url": None,
+      "generated_at": datetime.utcnow().isoformat() + "Z",
+      "files_written": [],
     }
+
+  if auto_deploy and github_token and username and repo_name:
+    try:
+      if create_or_update_repo and enable_pages_and_push:
+        # These helpers are expected to handle: repo create/clean, push files, enable Pages
+        github_url = create_or_update_repo(
+          username=username,
+          repo_name=repo_name,
+          token=github_token,
+          local_path=project_path,
+        )
+        pages_url = enable_pages_and_push(
+          username=username,
+          repo_name=repo_name,
+          token=github_token,
+          local_path=project_path,
+        )
+      else:
+        # Graceful no-op if GH helper not available
+        pass
+    except Exception as e:
+      # Do not fail the generation if deploy fails
+      print(f"[deploy] error: {e}")
+
+  return {
+    "success": True,
+    "project_path": project_path,
+    "github_url": github_url,
+    "pages_url": pages_url,
+    "generated_at": datetime.utcnow().isoformat() + "Z",
+    "files_written": ["index.html", "styles.css", "script.js"],
+  }
