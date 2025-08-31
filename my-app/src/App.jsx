@@ -13,6 +13,7 @@ function App() {
   const [figmaToken, setFigmaToken] = useState("");
   const [image, setImage] = useState(null);
   const [canvasData, setCanvasData] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const navigate = useNavigate();
 
@@ -113,6 +114,9 @@ function App() {
       return;
     }
 
+    setIsLoading(true);
+    console.log("Setting loading state to true");
+
     const formData = new FormData();
     formData.append("prompt", prompt);
     formData.append("project_name", projectName);
@@ -129,12 +133,20 @@ function App() {
 
     try {
       const apiBase = "https://autogenx.onrender.com";
+      console.log("Making fetch request to:", `${apiBase}/api/generate`);
+      
       const res = await fetch(`${apiBase}/api/generate`, {
         method: "POST",
         body: formData,
+        mode: 'cors',
       });
 
-      console.log("API response received:", res.status);
+      console.log("API response received:", res.status, res.statusText);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
       console.log("API response data:", data);
       
@@ -147,7 +159,11 @@ function App() {
       }
     } catch (err) {
       console.error("Request failed:", err);
-      alert("Server error");
+      console.error("Error details:", err.message);
+      alert(`Server error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+      console.log("Setting loading state to false");
     }
   };
 
@@ -283,7 +299,9 @@ function App() {
         </div>
 
         <div className="actions">
-          <button type="submit">Generate & Deploy</button>
+          <button type="submit" disabled={isLoading}>
+            {isLoading ? "Generating..." : "Generate & Deploy"}
+          </button>
         </div>
       </form>
     </div>
