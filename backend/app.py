@@ -12,7 +12,14 @@ from backend import create_and_deploy_project
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)
+    
+    # Configure CORS with explicit settings for GitHub Pages
+    CORS(app, origins=[
+        "https://zer0-data.github.io",
+        "http://localhost:*",
+        "http://127.0.0.1:*"
+    ])
+    
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 
     @app.route("/", methods=["GET"])
@@ -157,16 +164,31 @@ def create_app():
         token = request.form.get("github_token") or os.getenv("GITHUB_TOKEN")
         if not prompt:
             return jsonify({"success": False, "error": "Prompt is required"}), 400
-        result = create_and_deploy_project(
-            prompt=prompt,
-            project_name=project_name,
-            github_token=token if auto_deploy else None,
-            username=username if auto_deploy else None,
-            repo_name=repo_name if auto_deploy else None,
-            auto_deploy=auto_deploy,
-            img=img_path,
-        )
-        return jsonify(result)
+        
+        # Check if Google API key is available
+        if not os.getenv("GOOGLE_API_KEY"):
+            return jsonify({
+                "success": False, 
+                "error": "AI service is not configured. Please contact the administrator."
+            }), 503
+            
+        try:
+            result = create_and_deploy_project(
+                prompt=prompt,
+                project_name=project_name,
+                github_token=token if auto_deploy else None,
+                username=username if auto_deploy else None,
+                repo_name=repo_name if auto_deploy else None,
+                auto_deploy=auto_deploy,
+                img=img_path,
+            )
+            return jsonify(result)
+        except Exception as e:
+            print(f"Error in project generation: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": f"Project generation failed: {str(e)}"
+            }), 500
 
     @app.route("/download", methods=["GET"])
     def download():
