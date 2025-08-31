@@ -120,7 +120,8 @@ function App() {
     if (canvasData) formData.append("canvas_data", canvasData);
 
     try {
-      const res = await fetch("/api/generate", {
+      const apiBase = "https://autogenx.onrender.com";
+      const res = await fetch(`${apiBase}/api/generate`, {
         method: "POST",
         body: formData,
       });

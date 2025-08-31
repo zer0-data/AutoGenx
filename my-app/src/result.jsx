@@ -26,9 +26,10 @@ export default function Result() {
       if (!result.project_path) return;
       const q = new URLSearchParams({ path: result.project_path });
       try {
-        const res = await fetch(`/api/files?${q.toString()}`);
+        const apiBase = "https://autogenx.onrender.com";
+        const res = await fetch(`${apiBase}/api/files?${q.toString()}`);
         const data = await res.json();
-        if (data && data.files) setFiles(data.files);
+        if (data && !data.error) setFiles(data);
       } catch (e) {
         // no-op
       }
