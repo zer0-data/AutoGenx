@@ -11,43 +11,48 @@ except Exception:
 PROJECTS_DIR = Path("projects")
 
 def _scaffold_from_prompt(prompt: str) -> dict[str, str]:
-    title = (prompt or "Generated Site").strip().capitalize()
-    wants_form = "form" in prompt.lower()
-    fields = []
-    if "name" in prompt.lower(): fields.append(("name", "text", "Your name"))
-    if "email" in prompt.lower(): fields.append(("email", "email", "Email address"))
-    if "phone" in prompt.lower(): fields.append(("phone", "tel", "Phone"))
-    if "age" in prompt.lower(): fields.append(("age", "number", "Age"))
-    if "ticket" in prompt.lower(): fields.append(("tickets", "number", "No. of tickets"))
-    if not fields and wants_form:
-        fields = [("name", "text", "Your name")]
-    red_theme = "red" in prompt.lower()
-    css = f"""
-    :root {{
-      --primary: {"#c81d25" if red_theme else "#119da4"};
-      --bg: #ffffff;
-      --text: #111;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
-      color: var(--text); background: var(--bg);
-    }}
-    .wrap {{ max-width: 960px; margin: 0 auto; padding: 32px 20px; }}
-    h1 {{ margin: 0 0 20px; }}
-    .card {{
-      background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.06);
-    }}
-    label {{ font-weight: 600; display:block; margin: 16px 0 8px; }}
-    input, textarea, select {{ width: 100%; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; }}
-    button {{
-      margin-top: 16px; background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 12px 18px; cursor: pointer;
-    }}
-    button:hover {{ opacity: .9; }}
-    .hint {{ color: #6b7280; font-size: 14px; margin-top: 8px; }}
-    .banner {{ background: rgba(200,29,37,.07); border: 1px dashed rgba(200,29,37,.4); padding: 12px 14px; border-radius: 10px; margin: 16px 0; }}
-    """
+  title = (prompt or "Generated Site").strip().capitalize()
+  wants_form = "form" in prompt.lower()
+  fields = []
+  if "name" in prompt.lower():
+    fields.append(("name", "text", "Your name"))
+  if "email" in prompt.lower():
+    fields.append(("email", "email", "Email address"))
+  if "phone" in prompt.lower():
+    fields.append(("phone", "tel", "Phone"))
+  if "age" in prompt.lower():
+    fields.append(("age", "number", "Age"))
+  if "ticket" in prompt.lower():
+    fields.append(("tickets", "number", "No. of tickets"))
+  if not fields and wants_form:
+    fields = [("name", "text", "Your name")]
+  red_theme = "red" in prompt.lower()
+  css = f"""
+  :root {{
+    --primary: {"#c81d25" if red_theme else "#119da4"};
+    --bg: #ffffff;
+    --text: #111;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+    color: var(--text); background: var(--bg);
+  }}
+  .wrap {{ max-width: 960px; margin: 0 auto; padding: 32px 20px; }}
+  h1 {{ margin: 0 0 20px; }}
+  .card {{
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.06);
+  }}
+  label {{ font-weight: 600; display:block; margin: 16px 0 8px; }}
+  input, textarea, select {{ width: 100%; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; }}
+  button {{
+    margin-top: 16px; background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 12px 18px; cursor: pointer;
+  }}
+  button:hover {{ opacity: .9; }}
+  .hint {{ color: #6b7280; font-size: 14px; margin-top: 8px; }}
+  .banner {{ background: rgba(200,29,37,.07); border: 1px dashed rgba(200,29,37,.4); padding: 12px 14px; border-radius: 10px; margin: 16px 0; }}
+  """
     if wants_form:
         fields_html = "\n".join(
             f"""<label htmlFor=\"{name}\">{placeholder}</label>\n<input id=\"{name}\" name=\"{name}\" type=\"{typ}\" placeholder=\"{placeholder}\" required />"""
