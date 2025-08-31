@@ -6,11 +6,13 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import requests
 from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify, flash, send_from_directory, abort
+from flask_cors import CORS
 
 from backend import create_and_deploy_project
 
 def create_app():
     app = Flask(__name__)
+    CORS(app)
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 
     @app.route("/", methods=["GET"])
