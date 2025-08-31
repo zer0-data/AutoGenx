@@ -1,139 +1,20 @@
 # backend.py
-import os, uuid, textwrap
+import os
+import logging
+import uuid
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, Any
 
-# If you have a working GitHub helper, import it.
-# Otherwise we no-op on deploy.
-try:
-    from githubHandler import create_or_update_repo, enable_pages_and_push
-except Exception:
-    create_or_update_repo = None
-    enable_pages_and_push = None
+from projectCreator import create_project_structure
+from model import get_data_from_agent
+from githubHandler import deploy_to_github
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 PROJECTS_DIR = Path("projects")
-
-
-def _scaffold_from_prompt(prompt: str) -> dict[str, str]:
-    """
-    Super-simple rules-based generator so you always get real files.
-    Returns dict of filename -> content.
-    """
-    title = (prompt or "Generated Site").strip().capitalize()
-
-    wants_form = "form" in prompt.lower()
-    # crude guesses
-    fields = []
-    if "name" in prompt.lower(): fields.append(("name", "text", "Your name"))
-    if "email" in prompt.lower(): fields.append(("email", "email", "Email address"))
-    if "phone" in prompt.lower(): fields.append(("phone", "tel", "Phone"))
-    if "age" in prompt.lower(): fields.append(("age", "number", "Age"))
-    if "ticket" in prompt.lower(): fields.append(("tickets", "number", "No. of tickets"))
-    if not fields and wants_form:
-        fields = [("name", "text", "Your name")]
-
-    red_theme = "red" in prompt.lower()
-
-    css = f"""
-    :root {{
-      --primary: {"#c81d25" if red_theme else "#119da4"};
-      --bg: #ffffff;
-      --text: #111;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
-      color: var(--text); background: var(--bg);
-    }}
-    .wrap {{ max-width: 960px; margin: 0 auto; padding: 32px 20px; }}
-    h1 {{ margin: 0 0 20px; }}
-    .card {{
-      background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.06);
-    }}
-    label {{ font-weight: 600; display:block; margin: 16px 0 8px; }}
-    input, textarea, select {{ width: 100%; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; }}
-    button {{
-      margin-top: 16px; background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 12px 18px; cursor: pointer;
-    }}
-    button:hover {{ opacity: .9; }}
-    .hint {{ color: #6b7280; font-size: 14px; margin-top: 8px; }}
-    .banner {{ background: rgba(200,29,37,.07); border: 1px dashed rgba(200,29,37,.4); padding: 12px 14px; border-radius: 10px; margin: 16px 0; }}
-    """
-
-    if wants_form:
-        fields_html = "\n".join(
-            f"""<label htmlFor="{name}">{placeholder}</label>
-<input id="{name}" name="{name}" type="{typ}" placeholder="{placeholder}" required />"""
-            for (name, typ, placeholder) in fields
-        )
-        form_html = f"""
-        <div class="card">
-          <h2>Register for the event</h2>
-          <form id="eventForm">
-            {fields_html}
-            <label htmlFor="message">Message</label>
-            <textarea id="message" name="message" placeholder="Anything else?"></textarea>
-            <button type="submit">Submit</button>
-            <div id="status" class="hint"></div>
-          </form>
-        </div>
-        """
-        js = """
-        document.getElementById('eventForm')?.addEventListener('submit', (e) => {
-          e.preventDefault();
-          const data = Object.fromEntries(new FormData(e.currentTarget).entries());
-          const status = document.getElementById('status');
-          status.textContent = 'Submitting...';
-          setTimeout(() => {
-            status.textContent = '✅ Submitted! ' + JSON.stringify(data);
-            e.currentTarget.reset();
-          }, 600);
-        });
-        """
-    else:
-        form_html = """
-        <div class="card">
-          <h2>Welcome</h2>
-          <p>This site was generated automatically from your prompt.</p>
-        </div>
-        """
-        js = "// no dynamic logic for this page\n"
-
-    html = f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{title}</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div class="wrap">
-    <h1>{title}</h1>
-    <div class="banner"><strong>Prompt:</strong> {prompt}</div>
-    {form_html}
-  </div>
-  <script src="script.js"></script>
-</body>
-</html>
-"""
-    return {
-        "index.html": textwrap.dedent(html).strip(),
-        "styles.css": textwrap.dedent(css).strip(),
-        "script.js": textwrap.dedent(js).strip(),
-    }
-
-
-def _write_project(files: dict[str, str]) -> str:
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    pid = uuid.uuid4().hex[:8]
-    project_dir = PROJECTS_DIR / f"site-{pid}"
-    project_dir.mkdir(parents=True, exist_ok=True)
-    for name, content in files.items():
-        (project_dir / name).write_text(content, encoding="utf-8")
-    return str(project_dir)
 
 
 def create_and_deploy_project(
@@ -148,52 +29,151 @@ def create_and_deploy_project(
     figma_token: str | None = None,
 ) -> dict:
     """
-    Always generate a local project. If GitHub creds are provided and auto_deploy=True,
-    attempt to create/update repo and enable Pages (no-op if helper missing).
+    Complete pipeline: Generate project from prompt using AI and optionally deploy to GitHub
+    
+    Args:
+        prompt: User's project description
+        project_name: Local project directory name
+        github_token: GitHub personal access token (required for deployment)
+        username: GitHub username (required for deployment)
+        repo_name: Repository name (required for deployment)
+        auto_deploy: Whether to automatically deploy to GitHub
+        img: Path to uploaded image file
+        figma_url: Figma design URL (not used in this implementation)
+        figma_token: Figma access token (not used in this implementation)
+    
+    Returns:
+        Dict containing project info and deployment status
     """
-    files = _scaffold_from_prompt(prompt or "Generated Site")
-    project_path = _write_project(files)
-
-    github_url = None
-    pages_url = None
-
-    if auto_deploy and github_token and username and repo_name:
-        try:
-            if create_or_update_repo and enable_pages_and_push:
-                # These helpers are expected to handle: repo create/clean, push files, enable Pages
-                github_url = create_or_update_repo(
-                    username=username,
-                    repo_name=repo_name,
-                    token=github_token,
-                    local_path=project_path,
-                )
-                pages_url = enable_pages_and_push(
-                    username=username,
-                    repo_name=repo_name,
-                    token=github_token,
-                    local_path=project_path,
-                )
-            else:
-                # Graceful no-op if GH helper not available
-                pass
-        except Exception as e:
-            # Do not fail the generation if deploy fails
-            print(f"[deploy] error: {e}")
-
+    
+    # Generate project name if not provided
+    if not project_name:
+        import time
+        project_name = f"generated_project_{int(time.time())}"
+    
+    # Create unique project ID for file organization
+    pid = uuid.uuid4().hex[:8]
+    project_dir_name = f"site-{pid}"
+    
+    print(f"🎯 Creating project: {project_dir_name}")
+    print(f"📝 User request: {prompt}")
+    
+    # Step 1: Generate project files using AI
+    try:
+        agent_result = get_data_from_agent(prompt, img=img)
+        
+        if not agent_result:
+            return {
+                "success": False,
+                "error": "Failed to generate project files using AI",
+                "project_path": None,
+                "preview_url": None,
+                "download_url": None,
+                "github_url": None,
+                "pages_url": None,
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "files_written": []
+            }
+    
+    except Exception as e:
+        logger.error(f"Error in AI generation: {str(e)}")
+        return {
+            "success": False,
+            "error": f"AI generation failed: {str(e)}",
+            "project_path": None,
+            "preview_url": None,
+            "download_url": None,
+            "github_url": None,
+            "pages_url": None,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "files_written": []
+        }
+    
+    # Step 2: Create local project structure in projects directory
+    try:
+        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+        project_path = PROJECTS_DIR / project_dir_name
+        
+        # Create the project using the AI result
+        success = create_project_structure(agent_result, str(project_path))
+        
+        if not success:
+            return {
+                "success": False,
+                "error": "Failed to create local project structure",
+                "project_path": None,
+                "preview_url": None,
+                "download_url": None,
+                "github_url": None,
+                "pages_url": None,
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "files_written": []
+            }
+            
+    except Exception as e:
+        logger.error(f"Error creating project structure: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Failed to create project structure: {str(e)}",
+            "project_path": None,
+            "preview_url": None,
+            "download_url": None,
+            "github_url": None,
+            "pages_url": None,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "files_written": []
+        }
+    
     # Generate preview and download URLs for the frontend
     import base64
-    b64_path = base64.urlsafe_b64encode(project_path.encode()).decode()
+    b64_path = base64.urlsafe_b64encode(str(project_path).encode()).decode()
     base_url = "https://autogenx.onrender.com"  # Your Render backend URL
     preview_url = f"{base_url}/preview/{b64_path}/"
-    download_url = f"{base_url}/download?path={project_path}"
-
-    return {
+    download_url = f"{base_url}/download?path={str(project_path)}"
+    
+    # Get list of created files
+    files_created = []
+    if agent_result and 'files' in agent_result:
+        files_created = list(agent_result['files'].keys())
+    
+    result = {
         "success": True,
-        "project_path": project_path,
+        "project_path": str(project_path),
         "preview_url": preview_url,
         "download_url": download_url,
-        "github_url": github_url,
-        "pages_url": pages_url,
+        "amplified_requirements": agent_result.get('amplified_requirements', {}),
+        "files_created": files_created,
+        "github_url": None,
+        "pages_url": None,
         "generated_at": datetime.utcnow().isoformat() + "Z",
-        "files_written": ["index.html", "styles.css", "script.js"],
+        "files_written": files_created
     }
+    
+    # Step 3: Deploy to GitHub if requested
+    if auto_deploy and github_token and username and repo_name:
+        print(f"\n🌐 Auto-deploying to GitHub...")
+        
+        try:
+            website_url = deploy_to_github(str(project_path), github_token, username, repo_name)
+            
+            if website_url:
+                result["pages_url"] = website_url
+                result["github_url"] = f"https://github.com/{username}/{repo_name}"
+                result["deployment_status"] = "success"
+                print(f"\n🎉 Project successfully deployed!")
+                print(f"🔗 Live website: {website_url}")
+            else:
+                result["deployment_status"] = "failed"
+                print(f"\n⚠️ Local project created but deployment failed")
+                
+        except Exception as e:
+            logger.error(f"Deployment error: {str(e)}")
+            result["deployment_status"] = "failed"
+            result["deployment_error"] = str(e)
+    
+    elif auto_deploy:
+        result["deployment_status"] = "skipped"
+        result["deployment_error"] = "Missing GitHub credentials for deployment"
+        print(f"\n⚠️ Deployment skipped: Missing GitHub token, username, or repo name")
+    
+    return result
